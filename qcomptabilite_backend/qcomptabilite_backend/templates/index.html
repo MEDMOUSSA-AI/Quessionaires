@@ -264,19 +264,19 @@ const SECTIONS = {
   section1: [
     { id:"q5", type:"choice", ar:"هل تعرف معايير التقارير المالية الدولية (IFRS)؟", fr:"Connaissez-vous les normes internationales d'information financière (IFRS) ?", req:true, opts:OUI_NON },
     { id:"q6", num:1, type:"scale", ar:"هل تعتقد أن تطبيق معايير IFRS يحسّن جودة المعلومة المالية؟", fr:"Pensez-vous que l'application des IFRS améliore la qualité de l'information financière ?", req:true, opts:SCALE_AGREE },
-    { id:"q7", num:2, type:"scale", ar:"هل تسهّل المعايير المحاسبية الدولية مقارنة القوائم المالية بين الشركات؟", fr:"Les normes comptables internationales facilitent-elles la comparaison des états financiers entre les entreprises ?", req:true, opts:OUI_NON_SANS_OPINION },
-    { id:"q8", num:3, type:"scale", ar:"برأيك، هل تعزز المحاسبة الدولية الشفافية المالية؟", fr:"Selon vous, la comptabilité internationale renforce-t-elle la transparence financière ?", req:true, opts:OUI_NON }
+    { id:"q7", num:2, type:"scale", ar:"هل تسهّل المعايير المحاسبية الدولية مقارنة القوائم المالية بين الشركات؟", fr:"Les normes comptables internationales facilitent-elles la comparaison des états financiers entre les entreprises ?", req:true, opts:SCALE_AGREE },
+    { id:"q8", num:3, type:"scale", ar:"برأيك، هل تعزز المحاسبة الدولية الشفافية المالية؟", fr:"Selon vous, la comptabilité internationale renforce-t-elle la transparence financière ?", req:true, opts:SCALE_AGREE }
   ],
   section2: [
     { id:"q9", num:1, type:"scale", ar:"هل تؤثر جودة المعلومة المحاسبية على قرارات المستثمرين؟", fr:"La qualité de l'information comptable influence-t-elle les décisions des investisseurs ?", req:true, opts:SCALE_INFLUENCE },
     { id:"q10", num:2, type:"scale", ar:"هل تساهم المعايير المحاسبية الدولية في تقليل عدم تماثل المعلومات في الأسواق المالية؟", fr:"Les normes comptables internationales contribuent-elles à réduire l'asymétrie d'information sur les marchés financiers ?", req:true, opts:SCALE_AGREE },
-    { id:"q11", num:3, type:"scale", ar:"هل تعتقد أن اعتماد معايير IFRS يجذب المزيد من المستثمرين الأجانب؟", fr:"Pensez-vous que l'adoption des IFRS attire davantage d'investisseurs étrangers ?", req:true, opts:OUI_NON_PEUT_ETRE },
-    { id:"q12", num:4, type:"scale", ar:"هل تساهم المحاسبة الدولية في تعزيز ثقة المستثمرين؟", fr:"La comptabilité internationale contribue-t-elle à renforcer la confiance des investisseurs ?", req:true, opts:OUI_NON }
+    { id:"q11", num:3, type:"scale", ar:"هل تعتقد أن اعتماد معايير IFRS يجذب المزيد من المستثمرين الأجانب؟", fr:"Pensez-vous que l'adoption des IFRS attire davantage d'investisseurs étrangers ?", req:true, opts:SCALE_AGREE },
+    { id:"q12", num:4, type:"scale", ar:"هل تساهم المحاسبة الدولية في تعزيز ثقة المستثمرين؟", fr:"La comptabilité internationale contribue-t-elle à renforcer la confiance des investisseurs ?", req:true, opts:SCALE_AGREE }
   ],
   section3: [
     { id:"q13", num:1, type:"scale", ar:"هل يفضّل تطبيق المعايير الدولية تطوّر الأسواق المالية؟", fr:"L'application des normes internationales favorise-t-elle le développement des marchés financiers ?", req:true, opts:SCALE_AGREE },
-    { id:"q14", num:2, type:"scale", ar:"هل تكون الأسواق المالية أكثر كفاءة عندما تكون المعلومة المالية شفافة؟", fr:"Les marchés financiers sont-ils plus efficaces lorsque l'information financière est transparente ?", req:true, opts:OUI_NON },
-    { id:"q15", num:3, type:"scale", ar:"هل تسهّل المحاسبة الدولية وصول الشركات إلى التمويل؟", fr:"La comptabilité internationale facilite-t-elle l'accès des entreprises aux financements ?", req:true, opts:OUI_NON },
+    { id:"q14", num:2, type:"scale", ar:"هل تكون الأسواق المالية أكثر كفاءة عندما تكون المعلومة المالية شفافة؟", fr:"Les marchés financiers sont-ils plus efficaces lorsque l'information financière est transparente ?", req:true, opts:SCALE_AGREE },
+    { id:"q15", num:3, type:"scale", ar:"هل تسهّل المحاسبة الدولية وصول الشركات إلى التمويل؟", fr:"La comptabilité internationale facilite-t-elle l'accès des entreprises aux financements ?", req:true, opts:SCALE_AGREE },
     { id:"q16", type:"choice", ar:"برأيك، ما هو أهم فائدة للمحاسبة الدولية؟", fr:"Selon vous, quel est le principal avantage de la comptabilité internationale ?", req:true, other:true,
       opts:[{v:"transparence",ar:"الشفافية",fr:"Transparence"},{v:"comparabilite",ar:"قابلية المقارنة",fr:"Comparabilité"},
             {v:"attractivite",ar:"جاذبية للمستثمرين",fr:"Attractivité pour les investisseurs"},
