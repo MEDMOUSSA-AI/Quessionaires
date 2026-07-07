@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الإحصائيات — إجابات الاستبيان</title>
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@700&family=Tajawal:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  :root{ --ink:#16233D; --paper:#EEF1F6; --line:#C7D0DE; --bronze:#9C7A32; --bronze-soft:#C9A961; --teal:#1F6F5C; --white:#FCFBF8; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--paper);
+    background-image:linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:42px 42px;
+    font-family:'Tajawal', sans-serif; color:var(--ink); min-height:100vh; padding:32px 16px 80px;
+  }
+  .wrap{ max-width:1200px; margin:0 auto; }
+
+  header.top{
+    background:var(--white); border:1px solid var(--line); padding:28px 36px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:18px;
+    border-bottom:3px double var(--ink); margin-bottom:0;
+  }
+  header.top h1{ font-family:'Aref Ruqaa', serif; font-size:24px; }
+  header.top .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--bronze); letter-spacing:.08em; margin-bottom:6px; }
+  header.top .actions{ display:flex; gap:10px; flex-wrap:wrap; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; padding:10px 18px;
+    font-family:'Tajawal', sans-serif; font-weight:600; font-size:13.5px; cursor:pointer;
+    border:1px solid var(--ink); background:transparent; color:var(--ink); text-decoration:none;
+  }
+  .btn.primary{ background:var(--ink); color:var(--white); }
+  .btn.primary:hover{ background:#0F192D; }
+  .btn.ghost:hover{ background:var(--paper); }
+
+  .stats-bar{
+    background:var(--white); border:1px solid var(--line); border-top:none;
+    display:flex; gap:0; font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+  }
+  .stats-bar div{ padding:14px 36px; border-inline-end:1px solid var(--line); }
+  .stats-bar b{ display:block; font-size:20px; color:var(--ink); font-family:'Tajawal',sans-serif; margin-bottom:2px; }
+  .stats-bar span{ color:#7280A0; }
+
+  .empty{
+    background:var(--white); border:1px solid var(--line); border-top:none;
+    padding:60px 20px; text-align:center; color:#7280A0; font-size:14px;
+  }
+
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr));
+    gap:16px; margin-top:16px;
+  }
+  .card{
+    background:var(--white); border:1px solid var(--line); padding:22px 24px 18px;
+  }
+  .card .q-eyebrow{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--bronze);
+    letter-spacing:.06em; margin-bottom:4px;
+  }
+  .card h3{ font-size:15.5px; font-weight:700; margin-bottom:2px; line-height:1.5; }
+  .card .fr{ font-size:11.5px; color:#7280A0; margin-bottom:14px; font-style:italic; }
+  .card .canvas-wrap{ position:relative; height:280px; }
+  .card .n-count{
+    margin-top:10px; text-align:end; font-family:'IBM Plex Mono', monospace;
+    font-size:11px; color:#7280A0;
+  }
+
+  footer.foot{ text-align:center; margin-top:24px; }
+  footer.foot a{ color:var(--bronze); font-family:'IBM Plex Mono', monospace; font-size:12px; text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">لوحة الإدارة</div>
+      <h1>إحصائيات ورسوم بيانية</h1>
+    </div>
+    <div class="actions">
+      <a class="btn ghost" href="{{ url_for('admin_dashboard') }}">← الرجوع للإجابات</a>
+      {% if total > 0 %}
+      <a class="btn primary" href="{{ url_for('admin_export_all_word') }}">⬇ تنزيل كل الإجابات (Word)</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div><b>{{ total }}</b><span>إجمالي الإجابات</span></div>
+    <div><b>{{ stats|length }}</b><span>عدد الأسئلة</span></div>
+  </div>
+
+  {% if total > 0 %}
+  <div class="grid">
+    {% for s in stats %}
+    <div class="card">
+      <div class="q-eyebrow">{{ s.id.upper() }} — {% if s.chart_type == 'pie' %}دائري{% else %}أعمدة{% endif %}</div>
+      <h3>{{ s.label }}</h3>
+      <div class="fr">{{ s.label_fr }}</div>
+      <div class="canvas-wrap"><canvas id="chart-{{ s.id }}"></canvas></div>
+      <div class="n-count">{{ s.total }} إجابة</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">لا توجد إجابات مسجّلة بعد، لذلك لا تتوفر رسوم بيانية حتى الآن.</div>
+  {% endif %}
+
+  <footer class="foot"><a href="{{ url_for('api_health') }}">حالة الخادم</a></footer>
+</div>
+
+<script>
+  const statsData = {{ stats|tojson }};
+
+  const PALETTE = [
+    '#16233D', '#9C7A32', '#1F6F5C', '#C9A961', '#7280A0',
+    '#B23A48', '#3B6E8F', '#6B4226', '#4C5B7A', '#8E6C88',
+    '#2E7D6B', '#A85C32', '#5B4B8A', '#3E5C3E', '#8A4F5E'
+  ];
+
+  Chart.register(ChartDataLabels);
+
+  statsData.forEach((s) => {
+    const ctx = document.getElementById('chart-' + s.id);
+    if (!ctx) return;
+
+    const colors = s.labels.map((_, i) => PALETTE[i % PALETTE.length]);
+    const total = s.counts.reduce((a, b) => a + b, 0);
+
+    const isPie = s.chart_type === 'pie';
+
+    new Chart(ctx, {
+      type: isPie ? 'pie' : 'bar',
+      data: {
+        labels: s.labels,
+        datasets: [{
+          data: s.counts,
+          backgroundColor: colors,
+          borderColor: '#FCFBF8',
+          borderWidth: isPie ? 2 : 0,
+        }]
+      },
+      options: {
+        indexAxis: isPie ? undefined : 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: isPie,
+            position: 'right',
+            labels: { font: { family: 'Tajawal', size: 11.5 }, color: '#16233D', boxWidth: 12 }
+          },
+          datalabels: {
+            color: isPie ? '#FCFBF8' : '#16233D',
+            anchor: isPie ? 'center' : 'end',
+            align: isPie ? 'center' : 'end',
+            font: { family: 'Tajawal', size: 11, weight: '600' },
+            formatter: (value) => {
+              const pct = total ? ((value / total) * 100).toFixed(1).replace('.', ',') : 0;
+              return isPie ? pct + '%' : value;
+            }
+          }
+        },
+        scales: isPie ? {} : {
+          x: { beginAtZero: true, ticks: { precision: 0, font: { family: 'IBM Plex Mono', size: 10 } }, grid: { color: '#C7D0DE' } },
+          y: { ticks: { font: { family: 'Tajawal', size: 11.5 }, color: '#16233D' }, grid: { display: false } }
+        }
+      }
+    });
+  });
+</script>
+</body>
+</html>
