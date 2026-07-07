@@ -9,6 +9,7 @@ import os
 import io
 import json
 import sqlite3
+from collections import Counter
 from datetime import datetime
 from functools import wraps
 
@@ -36,25 +37,70 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme123")  # غيّرها في بيئة الإنتاج
 
 # وصف الأسئلة (يُستخدم في لوحة الإدارة وملفات Word)
+# opts: قائمة الخيارات الرسمية لكل سؤال كما عُرّفت في نموذج الاستبيان (index.html)
+#       — تُستخدم لعرض كل الخيارات دائمًا في الرسوم البيانية، حتى لو حصل خيار على 0 إجابة.
+#       الأسئلة بدون "opts" (q18 فقط) هي أسئلة نص حر مفتوحة.
+_SCALE_AGREE = [
+    {"v": "tout_a_fait_dacc", "ar": "موافق بشدة"},
+    {"v": "dacc", "ar": "موافق"},
+    {"v": "neutre", "ar": "محايد"},
+    {"v": "pas_dacc", "ar": "غير موافق"},
+    {"v": "pas_du_tout_dacc", "ar": "غير موافق بشدة"},
+]
+_SCALE_INFLUENCE = [
+    {"v": "tres_fortement", "ar": "بشدة جدًا"},
+    {"v": "fortement", "ar": "بشدة"},
+    {"v": "moyennement", "ar": "بشكل متوسط"},
+    {"v": "faiblement", "ar": "بشكل ضعيف"},
+    {"v": "pas_du_tout", "ar": "لا تؤثر إطلاقًا"},
+]
+_OUI_NON = [{"v": "oui", "ar": "نعم"}, {"v": "non", "ar": "لا"}]
+_OUI_NON_SANS_OPINION = _OUI_NON + [{"v": "sans_opinion", "ar": "بدون رأي"}]
+_OUI_NON_PEUT_ETRE = _OUI_NON + [{"v": "peut_etre", "ar": "ربما"}]
+
 QUESTIONS = [
-    {"id": "q1",  "ar": "الجنس",                                              "fr": "Sexe"},
-    {"id": "q2",  "ar": "العمر",                                              "fr": "Âge"},
-    {"id": "q3",  "ar": "المهنة",                                             "fr": "Profession"},
-    {"id": "q4",  "ar": "المستوى الدراسي",                                    "fr": "Niveau d'études"},
-    {"id": "q5",  "ar": "هل تعرف معايير IFRS؟",                                "fr": "Connaissez-vous les IFRS ?"},
-    {"id": "q6",  "ar": "تطبيق IFRS يحسّن جودة المعلومة المالية",              "fr": "IFRS améliore la qualité de l'information"},
-    {"id": "q7",  "ar": "المعايير الدولية تسهّل مقارنة القوائم المالية",       "fr": "Facilite la comparaison des états financiers"},
-    {"id": "q8",  "ar": "المحاسبة الدولية تعزز الشفافية المالية",              "fr": "Renforce la transparence financière"},
-    {"id": "q9",  "ar": "جودة المعلومة المحاسبية تؤثر على قرارات المستثمرين",  "fr": "Influence sur les décisions des investisseurs"},
-    {"id": "q10", "ar": "تقليل عدم تماثل المعلومات في الأسواق المالية",        "fr": "Réduction de l'asymétrie d'information"},
-    {"id": "q11", "ar": "اعتماد IFRS يجذب المستثمرين الأجانب",                 "fr": "Attire les investisseurs étrangers"},
-    {"id": "q12", "ar": "المحاسبة الدولية تعزز ثقة المستثمرين",                "fr": "Renforce la confiance des investisseurs"},
-    {"id": "q13", "ar": "تطبيق المعايير الدولية يفضّل تطور الأسواق المالية",   "fr": "Favorise le développement des marchés"},
-    {"id": "q14", "ar": "الأسواق أكثر كفاءة مع الشفافية المالية",              "fr": "Marchés plus efficaces avec transparence"},
-    {"id": "q15", "ar": "المحاسبة الدولية تسهّل الوصول إلى التمويل",           "fr": "Facilite l'accès au financement"},
-    {"id": "q16", "ar": "أهم فائدة للمحاسبة الدولية",                          "fr": "Principal avantage"},
-    {"id": "q17", "ar": "التوصية باعتماد المعايير الدولية لكل الشركات المدرجة", "fr": "Recommandation d'adoption générale"},
+    {"id": "q1",  "ar": "الجنس",                                              "fr": "Sexe",
+     "opts": [{"v": "homme", "ar": "ذكر"}, {"v": "femme", "ar": "أنثى"}]},
+    {"id": "q2",  "ar": "العمر",                                              "fr": "Âge",
+     "opts": [{"v": "lt25", "ar": "أقل من 25 سنة"}, {"v": "25_35", "ar": "25–35 سنة"},
+              {"v": "36_45", "ar": "36–45 سنة"}, {"v": "gt45", "ar": "أكثر من 45 سنة"}]},
+    {"id": "q3",  "ar": "المهنة",                                             "fr": "Profession",
+     "opts": [{"v": "etudiant", "ar": "طالب"}, {"v": "comptable", "ar": "محاسب"},
+              {"v": "auditeur", "ar": "مدقق حسابات"}, {"v": "investisseur", "ar": "مستثمر"},
+              {"v": "autre", "ar": "أخرى"}]},
+    {"id": "q4",  "ar": "المستوى الدراسي",                                    "fr": "Niveau d'études",
+     "opts": [{"v": "licence", "ar": "إجازة (ليسانس)"}, {"v": "master", "ar": "ماستر"},
+              {"v": "doctorat", "ar": "دكتوراه"}, {"v": "autre", "ar": "أخرى"}]},
+    {"id": "q5",  "ar": "هل تعرف معايير IFRS؟",                                "fr": "Connaissez-vous les IFRS ?",
+     "opts": _OUI_NON},
+    {"id": "q6",  "ar": "تطبيق IFRS يحسّن جودة المعلومة المالية",              "fr": "IFRS améliore la qualité de l'information",
+     "opts": _SCALE_AGREE},
+    {"id": "q7",  "ar": "المعايير الدولية تسهّل مقارنة القوائم المالية",       "fr": "Facilite la comparaison des états financiers",
+     "opts": _OUI_NON_SANS_OPINION},
+    {"id": "q8",  "ar": "المحاسبة الدولية تعزز الشفافية المالية",              "fr": "Renforce la transparence financière",
+     "opts": _OUI_NON},
+    {"id": "q9",  "ar": "جودة المعلومة المحاسبية تؤثر على قرارات المستثمرين",  "fr": "Influence sur les décisions des investisseurs",
+     "opts": _SCALE_INFLUENCE},
+    {"id": "q10", "ar": "تقليل عدم تماثل المعلومات في الأسواق المالية",        "fr": "Réduction de l'asymétrie d'information",
+     "opts": _SCALE_AGREE},
+    {"id": "q11", "ar": "اعتماد IFRS يجذب المستثمرين الأجانب",                 "fr": "Attire les investisseurs étrangers",
+     "opts": _OUI_NON_PEUT_ETRE},
+    {"id": "q12", "ar": "المحاسبة الدولية تعزز ثقة المستثمرين",                "fr": "Renforce la confiance des investisseurs",
+     "opts": _OUI_NON},
+    {"id": "q13", "ar": "تطبيق المعايير الدولية يفضّل تطور الأسواق المالية",   "fr": "Favorise le développement des marchés",
+     "opts": _SCALE_AGREE},
+    {"id": "q14", "ar": "الأسواق أكثر كفاءة مع الشفافية المالية",              "fr": "Marchés plus efficaces avec transparence",
+     "opts": _OUI_NON},
+    {"id": "q15", "ar": "المحاسبة الدولية تسهّل الوصول إلى التمويل",           "fr": "Facilite l'accès au financement",
+     "opts": _OUI_NON},
+    {"id": "q16", "ar": "أهم فائدة للمحاسبة الدولية",                          "fr": "Principal avantage",
+     "opts": [{"v": "transparence", "ar": "الشفافية"}, {"v": "comparabilite", "ar": "قابلية المقارنة"},
+              {"v": "attractivite", "ar": "جاذبية للمستثمرين"}, {"v": "reduction_risques", "ar": "تقليل المخاطر"},
+              {"v": "autre", "ar": "أخرى"}]},
+    {"id": "q17", "ar": "التوصية باعتماد المعايير الدولية لكل الشركات المدرجة", "fr": "Recommandation d'adoption générale",
+     "opts": _OUI_NON},
     {"id": "q18", "ar": "ملاحظات واقتراحات",                                  "fr": "Suggestions et commentaires"},
+    # q18 بدون "opts": سؤال نص حر مفتوح
 ]
 QUESTION_MAP = {q["id"]: q for q in QUESTIONS}
 
@@ -191,6 +237,75 @@ def admin_dashboard():
         })
 
     return render_template("dashboard.html", responses=responses, total=len(responses))
+
+
+# --------------------------------------------------------------------------
+# إحصائيات ورسوم بيانية
+# --------------------------------------------------------------------------
+def compute_question_stats():
+    """يحسب توزيع الإجابات لكل سؤال.
+    الأسئلة ذات الخيارات المغلقة (opts) تعرض كل خياراتها الرسمية دائمًا — حتى
+    لو حصل خيار على 0 إجابة — بعد ترجمة الرموز التقنية المخزّنة (مثل
+    tout_a_fait_dacc) إلى تسمياتها العربية الصحيحة (موافق بشدة).
+    الأسئلة المفتوحة (بدون opts، أي q18) تُعدّ فيها التكرارات الفعلية للنصوص.
+    نوع الرسم: دائري لسؤال بخيارين فقط، أعمدة لما عدا ذلك."""
+    db = get_db()
+    rows = db.execute("SELECT answers_json FROM responses").fetchall()
+
+    stats = []
+    for q in QUESTIONS:
+        opts = q.get("opts")
+
+        if opts:
+            counts_map = {opt["ar"]: 0 for opt in opts}
+            value_to_label = {opt["v"]: opt["ar"] for opt in opts}
+            no_answer = 0
+
+            for row in rows:
+                answers = json.loads(row["answers_json"])
+                raw_value = answers.get(q["id"], "")
+                if raw_value in value_to_label:
+                    counts_map[value_to_label[raw_value]] += 1
+                elif raw_value and "أخرى" in counts_map:
+                    # قيمة غير معروفة (بيانات قديمة مثلاً) — تُحسب ضمن "أخرى" إن وُجدت
+                    counts_map["أخرى"] += 1
+                elif not raw_value:
+                    no_answer += 1
+
+            labels = list(counts_map.keys())
+            counts = list(counts_map.values())
+            if no_answer:
+                labels.append("بدون إجابة")
+                counts.append(no_answer)
+        else:
+            counter = Counter()
+            for row in rows:
+                answers = json.loads(row["answers_json"])
+                value = str(answers.get(q["id"], "") or "").strip()
+                counter[value if value else "بدون إجابة"] += 1
+            labels = list(counter.keys())
+            counts = list(counter.values())
+
+        total_q = sum(counts)
+        stats.append({
+            "id": q["id"],
+            "label": q["ar"],
+            "label_fr": q["fr"],
+            "chart_type": "pie" if len(labels) == 2 else "bar",
+            "labels": labels,
+            "counts": counts,
+            "total": total_q,
+        })
+    return stats
+
+
+@app.route("/admin/stats")
+@login_required
+def admin_stats():
+    stats = compute_question_stats()
+    db = get_db()
+    total = db.execute("SELECT COUNT(*) AS c FROM responses").fetchone()["c"]
+    return render_template("stats.html", stats=stats, total=total)
 
 
 @app.route("/admin/response/<int:response_id>")
