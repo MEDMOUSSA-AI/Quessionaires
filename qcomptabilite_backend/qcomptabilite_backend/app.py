@@ -76,23 +76,23 @@ QUESTIONS = [
     {"id": "q6",  "ar": "تطبيق IFRS يحسّن جودة المعلومة المالية",              "fr": "IFRS améliore la qualité de l'information",
      "opts": _SCALE_AGREE},
     {"id": "q7",  "ar": "المعايير الدولية تسهّل مقارنة القوائم المالية",       "fr": "Facilite la comparaison des états financiers",
-     "opts": _OUI_NON_SANS_OPINION},
+     "opts": _SCALE_AGREE},
     {"id": "q8",  "ar": "المحاسبة الدولية تعزز الشفافية المالية",              "fr": "Renforce la transparence financière",
-     "opts": _OUI_NON},
+     "opts": _SCALE_AGREE},
     {"id": "q9",  "ar": "جودة المعلومة المحاسبية تؤثر على قرارات المستثمرين",  "fr": "Influence sur les décisions des investisseurs",
      "opts": _SCALE_INFLUENCE},
     {"id": "q10", "ar": "تقليل عدم تماثل المعلومات في الأسواق المالية",        "fr": "Réduction de l'asymétrie d'information",
      "opts": _SCALE_AGREE},
     {"id": "q11", "ar": "اعتماد IFRS يجذب المستثمرين الأجانب",                 "fr": "Attire les investisseurs étrangers",
-     "opts": _OUI_NON_PEUT_ETRE},
+     "opts": _SCALE_AGREE},
     {"id": "q12", "ar": "المحاسبة الدولية تعزز ثقة المستثمرين",                "fr": "Renforce la confiance des investisseurs",
-     "opts": _OUI_NON},
+     "opts": _SCALE_AGREE},
     {"id": "q13", "ar": "تطبيق المعايير الدولية يفضّل تطور الأسواق المالية",   "fr": "Favorise le développement des marchés",
      "opts": _SCALE_AGREE},
     {"id": "q14", "ar": "الأسواق أكثر كفاءة مع الشفافية المالية",              "fr": "Marchés plus efficaces avec transparence",
-     "opts": _OUI_NON},
+     "opts": _SCALE_AGREE},
     {"id": "q15", "ar": "المحاسبة الدولية تسهّل الوصول إلى التمويل",           "fr": "Facilite l'accès au financement",
-     "opts": _OUI_NON},
+     "opts": _SCALE_AGREE},
     {"id": "q16", "ar": "أهم فائدة للمحاسبة الدولية",                          "fr": "Principal avantage",
      "opts": [{"v": "transparence", "ar": "الشفافية"}, {"v": "comparabilite", "ar": "قابلية المقارنة"},
               {"v": "attractivite", "ar": "جاذبية للمستثمرين"}, {"v": "reduction_risques", "ar": "تقليل المخاطر"},
@@ -260,6 +260,7 @@ def compute_question_stats():
             counts_map = {opt["ar"]: 0 for opt in opts}
             value_to_label = {opt["v"]: opt["ar"] for opt in opts}
             no_answer = 0
+            legacy = 0  # إجابات محفوظة بقيم من نسخة سابقة للاستبيان لم تعد ضمن الخيارات الحالية
 
             for row in rows:
                 answers = json.loads(row["answers_json"])
@@ -267,9 +268,10 @@ def compute_question_stats():
                 if raw_value in value_to_label:
                     counts_map[value_to_label[raw_value]] += 1
                 elif raw_value and "أخرى" in counts_map:
-                    # قيمة غير معروفة (بيانات قديمة مثلاً) — تُحسب ضمن "أخرى" إن وُجدت
                     counts_map["أخرى"] += 1
-                elif not raw_value:
+                elif raw_value:
+                    legacy += 1
+                else:
                     no_answer += 1
 
             labels = list(counts_map.keys())
@@ -277,6 +279,9 @@ def compute_question_stats():
             if no_answer:
                 labels.append("بدون إجابة")
                 counts.append(no_answer)
+            if legacy:
+                labels.append("قيم سابقة (سلّم قديم)")
+                counts.append(legacy)
         else:
             counter = Counter()
             for row in rows:
