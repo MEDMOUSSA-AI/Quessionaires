@@ -606,10 +606,30 @@ def admin_export_all_word():
     set_rtl(summary)
     summary.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    # ---- القسم الأول: رسوم بيانية لتوزيع إجابات كل المشاركين على كل سؤال ----
+    stats_heading = doc.add_heading(level=1)
+    stats_heading.add_run("أولاً: الإحصائيات والرسوم البيانية")
+    set_rtl(stats_heading)
+    stats_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    for stat in compute_question_stats():
+        img_buf = generate_stat_chart_image(stat)
+        doc.add_picture(img_buf, width=Cm(16))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph()
+
+    # ---- القسم الثاني: كل الإجابات الفردية كما وردت ----
+    responses_heading = doc.add_heading(level=1)
+    responses_heading.add_run("ثانياً: الإجابات الفردية")
+    set_rtl(responses_heading)
+    responses_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    doc.add_page_break()
+
     for i, row in enumerate(rows, start=1):
         answers = json.loads(row["answers_json"])
-        doc.add_page_break()
         add_response_to_doc(doc, row, answers, index=i)
+        if i < len(rows):
+            doc.add_page_break()
 
     buf = io.BytesIO()
     doc.save(buf)
