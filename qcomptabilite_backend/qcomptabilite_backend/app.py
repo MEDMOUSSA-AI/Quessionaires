@@ -10,7 +10,8 @@ import os
 import io
 import json
 import math
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from collections import Counter
 from datetime import datetime
 from functools import wraps
@@ -40,7 +41,12 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 CORS(app)  # يسمح لصفحة الاستبيان (مستضافة في مكان آخر) بإرسال الإجابات
 
-DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "responses.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "متغير البيئة DATABASE_URL غير مضبوط. أضِفه من إعدادات الخدمة على Render "
+        "بقيمة رابط اتصال قاعدة بيانات Postgres (Internal أو External Database URL)."
+    )
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme123")  # غيّرها في بيئة الإنتاج
@@ -144,8 +150,7 @@ QUESTION_MAP = {q["id"]: q for q in QUESTIONS}
 # --------------------------------------------------------------------------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = psycopg2.connect(DATABASE_URL)
     return g.db
 
 
@@ -156,11 +161,33 @@ def close_db(exception=None):
         db.close()
 
 
+def query_db(sql, args=(), one=False):
+    """تنفيذ استعلام SELECT وإرجاع النتائج كقواميس (يشبه sqlite3.Row)."""
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(sql, args)
+    rows = cur.fetchall()
+    cur.close()
+    if one:
+        return rows[0] if rows else None
+    return rows
+
+
+def execute_db(sql, args=()):
+    """تنفيذ استعلام INSERT/UPDATE/DELETE مع commit تلقائي."""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(sql, args)
+    db.commit()
+    cur.close()
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS responses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             created_at TEXT NOT NULL,
             lang TEXT NOT NULL,
             answers_json TEXT NOT NULL,
@@ -169,6 +196,7 @@ def init_db():
         )
     """)
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -207,9 +235,8 @@ def api_submit():
     lang = data.get("lang", "ar")
     answers = data["answers"]
 
-    db = get_db()
-    db.execute(
-        "INSERT INTO responses (created_at, lang, answers_json, user_agent, ip_address) VALUES (?, ?, ?, ?, ?)",
+    execute_db(
+        "INSERT INTO responses (created_at, lang, answers_json, user_agent, ip_address) VALUES (%s, %s, %s, %s, %s)",
         (
             datetime.utcnow().isoformat(),
             lang,
@@ -218,7 +245,6 @@ def api_submit():
             request.headers.get("X-Forwarded-For", request.remote_addr or ""),
         ),
     )
-    db.commit()
     return jsonify({"status": "ok"})
 
 
@@ -255,8 +281,7 @@ def admin_logout():
 @app.route("/admin")
 @login_required
 def admin_dashboard():
-    db = get_db()
-    rows = db.execute("SELECT * FROM responses ORDER BY id DESC").fetchall()
+    rows = query_db("SELECT * FROM responses ORDER BY id DESC")
 
     responses = []
     for r in rows:
@@ -283,8 +308,7 @@ def compute_question_stats():
     tout_a_fait_dacc) إلى تسمياتها العربية الصحيحة (موافق بشدة).
     الأسئلة المفتوحة (بدون opts، أي q18) تُعدّ فيها التكرارات الفعلية للنصوص.
     نوع الرسم: دائري لسؤال بخيارين فقط، أعمدة لما عدا ذلك."""
-    db = get_db()
-    rows = db.execute("SELECT answers_json FROM responses").fetchall()
+    rows = query_db("SELECT answers_json FROM responses")
 
     stats = []
     for q in QUESTIONS:
@@ -401,8 +425,7 @@ def generate_stat_chart_image(stat):
 @login_required
 def admin_export_stats_word():
     stats = compute_question_stats()
-    db = get_db()
-    total = db.execute("SELECT COUNT(*) AS c FROM responses").fetchone()["c"]
+    total = query_db("SELECT COUNT(*) AS c FROM responses", one=True)["c"]
 
     doc = Document()
     style_document_base(doc)
@@ -442,8 +465,7 @@ def admin_export_stats_word():
 @login_required
 def admin_stats():
     stats = compute_question_stats()
-    db = get_db()
-    total = db.execute("SELECT COUNT(*) AS c FROM responses").fetchone()["c"]
+    total = query_db("SELECT COUNT(*) AS c FROM responses", one=True)["c"]
     return render_template("stats.html", stats=stats, total=total)
 
 
@@ -462,8 +484,7 @@ def admin_stat_chart_image(question_id):
 @app.route("/admin/response/<int:response_id>")
 @login_required
 def admin_response_detail(response_id):
-    db = get_db()
-    row = db.execute("SELECT * FROM responses WHERE id = ?", (response_id,)).fetchone()
+    row = query_db("SELECT * FROM responses WHERE id = %s", (response_id,), one=True)
     if row is None:
         flash("لم يتم العثور على هذه الإجابة")
         return redirect(url_for("admin_dashboard"))
@@ -483,9 +504,7 @@ def admin_response_detail(response_id):
 @app.route("/admin/response/<int:response_id>/delete", methods=["POST"])
 @login_required
 def admin_response_delete(response_id):
-    db = get_db()
-    db.execute("DELETE FROM responses WHERE id = ?", (response_id,))
-    db.commit()
+    execute_db("DELETE FROM responses WHERE id = %s", (response_id,))
     return redirect(url_for("admin_dashboard"))
 
 
@@ -560,8 +579,7 @@ def add_response_to_doc(doc, row, answers, index=None):
 @app.route("/admin/response/<int:response_id>/word")
 @login_required
 def admin_export_word(response_id):
-    db = get_db()
-    row = db.execute("SELECT * FROM responses WHERE id = ?", (response_id,)).fetchone()
+    row = query_db("SELECT * FROM responses WHERE id = %s", (response_id,), one=True)
     if row is None:
         flash("لم يتم العثور على هذه الإجابة")
         return redirect(url_for("admin_dashboard"))
@@ -592,8 +610,7 @@ def admin_export_word(response_id):
 @app.route("/admin/export-all/word")
 @login_required
 def admin_export_all_word():
-    db = get_db()
-    rows = db.execute("SELECT * FROM responses ORDER BY id ASC").fetchall()
+    rows = query_db("SELECT * FROM responses ORDER BY id ASC")
 
     doc = Document()
     style_document_base(doc)
