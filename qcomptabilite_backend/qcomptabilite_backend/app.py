@@ -354,7 +354,7 @@ def compute_question_stats():
             "id": q["id"],
             "label": q["ar"],
             "label_fr": q["fr"],
-            "chart_type": "pie" if len(labels) == 2 else "bar",
+            "chart_type": "pie",
             "labels": labels,
             "counts": counts,
             "total": total_q,
@@ -363,51 +363,34 @@ def compute_question_stats():
 
 
 def generate_stat_chart_image(stat):
-    """يولّد صورة PNG (في الذاكرة) لرسم بياني يمثّل توزيع إجابات سؤال واحد —
-    دائري للأسئلة ذات خيارين، وأعمدة أفقية لما عداها — بنفس ألوان لوحة الإدارة."""
+    """يولّد صورة PNG (في الذاكرة) لرسم بياني دائري يمثّل توزيع إجابات سؤال واحد
+    على خياراته الخاصة به بالتحديد، مع عدد الإجابات ونسبتها — بنفس ألوان لوحة الإدارة."""
     labels = stat["labels"]
     counts = stat["counts"]
     total = sum(counts) or 1
     colors = [_CHART_COLORS[i % len(_CHART_COLORS)] for i in range(len(labels))]
 
-    fig, ax = plt.subplots(figsize=(7.4, 4.3))
+    fig, ax = plt.subplots(figsize=(7.4, 4.6))
 
-    if stat["chart_type"] == "pie":
-        wedges, _ = ax.pie(
-            counts, colors=colors, startangle=90, counterclock=False,
-            wedgeprops={"edgecolor": "#FCFBF8", "linewidth": 2},
-        )
-        for w, c in zip(wedges, counts):
-            if c == 0:
-                continue
-            ang = math.radians((w.theta2 + w.theta1) / 2)
-            x, y = 0.68 * math.cos(ang), 0.68 * math.sin(ang)
-            pct = f"{c / total * 100:.1f}%".replace(".", ",")
-            ax.text(x, y, ar_text(pct), ha="center", va="center", color="white",
-                     fontproperties=AR_FONT, fontsize=11)
-        ax.legend(
-            [plt.Rectangle((0, 0), 1, 1, facecolor=c) for c in colors],
-            [ar_text(l) for l in labels], loc="center left",
-            bbox_to_anchor=(1.02, 0.5), prop=AR_FONT, frameon=False, fontsize=10.5,
-        )
-        ax.axis("equal")
-    else:
-        y_pos = list(range(len(labels)))
-        bars = ax.barh(y_pos, counts, color=colors, height=0.6)
-        ax.set_yticks(y_pos)
-        ax.set_yticklabels([ar_text(l) for l in labels], fontproperties=AR_FONT, fontsize=10.5)
-        ax.invert_yaxis()
-        for spine in ("top", "right", "left"):
-            ax.spines[spine].set_visible(False)
-        ax.get_xaxis().set_visible(False)
-        max_count = max(counts) if counts else 1
-        for bar, c in zip(bars, counts):
-            pct = f"{c / total * 100:.1f}%".replace(".", ",")
-            ax.text(
-                bar.get_width() + max_count * 0.02, bar.get_y() + bar.get_height() / 2,
-                ar_text(f"{c} ({pct})"), va="center", ha="left",
-                fontproperties=AR_FONT, fontsize=10, color="#16233D",
-            )
+    wedges, _ = ax.pie(
+        counts, colors=colors, startangle=90, counterclock=False,
+        wedgeprops={"edgecolor": "#FCFBF8", "linewidth": 2},
+    )
+    for w, c in zip(wedges, counts):
+        if c == 0:
+            continue
+        ang = math.radians((w.theta2 + w.theta1) / 2)
+        x, y = 0.68 * math.cos(ang), 0.68 * math.sin(ang)
+        pct = f"{c / total * 100:.1f}%".replace(".", ",")
+        ax.text(x, y, ar_text(f"{c} ({pct})"), ha="center", va="center", color="white",
+                 fontproperties=AR_FONT, fontsize=10.5, fontweight="bold")
+    legend_labels = [ar_text(f"{l}  —  {c}") for l, c in zip(labels, counts)]
+    ax.legend(
+        [plt.Rectangle((0, 0), 1, 1, facecolor=c) for c in colors],
+        legend_labels, loc="center left",
+        bbox_to_anchor=(1.02, 0.5), prop=AR_FONT, frameon=False, fontsize=10.5,
+    )
+    ax.axis("equal")
 
     ax.set_title(ar_text(stat["label"]) + "\n", fontproperties=AR_FONT, fontsize=13.5,
                  fontweight="bold", color="#16233D", loc="center")
