@@ -8,10 +8,18 @@ Backend لاستبيان: أثر المحاسبة الدولية على الأس
 import os
 import io
 import json
+import math
 import sqlite3
 from collections import Counter
 from datetime import datetime
 from functools import wraps
+
+import matplotlib
+matplotlib.use("Agg")  # لا حاجة لواجهة رسومية على الخادم
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 from flask import (
     Flask, request, jsonify, render_template, redirect,
@@ -35,6 +43,31 @@ DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "res
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme123")  # غيّرها في بيئة الإنتاج
+
+# --------------------------------------------------------------------------
+# خط عربي لاستخدامه في الرسوم البيانية (matplotlib لا يدعم تشكيل الحروف العربية
+# تلقائيًا، لذلك نُهيّئ النص عبر arabic_reshaper + python-bidi ثم نرسمه بهذا الخط)
+# --------------------------------------------------------------------------
+_FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "NotoNaskhArabic-Regular.ttf")
+if os.path.exists(_FONT_PATH):
+    fm.fontManager.addfont(_FONT_PATH)
+    AR_FONT = fm.FontProperties(fname=_FONT_PATH)
+else:
+    AR_FONT = fm.FontProperties()  # احتياطي إن لم يُرفَع ملف الخط بعد
+
+
+def ar_text(text):
+    """يهيّئ نصًا عربيًا (يربط الحروف ويصحّح اتجاه العرض) ليظهر سليمًا في matplotlib."""
+    try:
+        return get_display(arabic_reshaper.reshape(str(text)))
+    except Exception:
+        return str(text)
+
+
+_CHART_COLORS = [
+    "#16233D", "#9C7A32", "#1F6F5C", "#C9A961", "#7280A0",
+    "#B23A48", "#3B6E8F", "#6B4226", "#4C5B7A", "#8E6C88",
+]
 
 # وصف الأسئلة (يُستخدم في لوحة الإدارة وملفات Word)
 # opts: قائمة الخيارات الرسمية لكل سؤال كما عُرّفت في نموذج الاستبيان (index.html)
@@ -302,6 +335,105 @@ def compute_question_stats():
             "total": total_q,
         })
     return stats
+
+
+def generate_stat_chart_image(stat):
+    """يولّد صورة PNG (في الذاكرة) لرسم بياني يمثّل توزيع إجابات سؤال واحد —
+    دائري للأسئلة ذات خيارين، وأعمدة أفقية لما عداها — بنفس ألوان لوحة الإدارة."""
+    labels = stat["labels"]
+    counts = stat["counts"]
+    total = sum(counts) or 1
+    colors = [_CHART_COLORS[i % len(_CHART_COLORS)] for i in range(len(labels))]
+
+    fig, ax = plt.subplots(figsize=(7.4, 4.3))
+
+    if stat["chart_type"] == "pie":
+        wedges, _ = ax.pie(
+            counts, colors=colors, startangle=90, counterclock=False,
+            wedgeprops={"edgecolor": "#FCFBF8", "linewidth": 2},
+        )
+        for w, c in zip(wedges, counts):
+            if c == 0:
+                continue
+            ang = math.radians((w.theta2 + w.theta1) / 2)
+            x, y = 0.68 * math.cos(ang), 0.68 * math.sin(ang)
+            pct = f"{c / total * 100:.1f}%".replace(".", ",")
+            ax.text(x, y, ar_text(pct), ha="center", va="center", color="white",
+                     fontproperties=AR_FONT, fontsize=11)
+        ax.legend(
+            wedges, [ar_text(l) for l in labels], loc="center left",
+            bbox_to_anchor=(1.02, 0.5), prop=AR_FONT, frameon=False, fontsize=10.5,
+        )
+        ax.axis("equal")
+    else:
+        y_pos = list(range(len(labels)))
+        bars = ax.barh(y_pos, counts, color=colors, height=0.6)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels([ar_text(l) for l in labels], fontproperties=AR_FONT, fontsize=10.5)
+        ax.invert_yaxis()
+        for spine in ("top", "right", "left"):
+            ax.spines[spine].set_visible(False)
+        ax.get_xaxis().set_visible(False)
+        max_count = max(counts) if counts else 1
+        for bar, c in zip(bars, counts):
+            pct = f"{c / total * 100:.1f}%".replace(".", ",")
+            ax.text(
+                bar.get_width() + max_count * 0.02, bar.get_y() + bar.get_height() / 2,
+                ar_text(f"{c} ({pct})"), va="center", ha="left",
+                fontproperties=AR_FONT, fontsize=10, color="#16233D",
+            )
+
+    ax.set_title(ar_text(stat["label"]) + "\n", fontproperties=AR_FONT, fontsize=13.5,
+                 fontweight="bold", color="#16233D", loc="center")
+    fig.text(0.5, 0.93, ar_text(f"{total} إجابة"), ha="center",
+              fontproperties=AR_FONT, fontsize=10, color="#9C7A32")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/admin/export-stats/word")
+@login_required
+def admin_export_stats_word():
+    stats = compute_question_stats()
+    db = get_db()
+    total = db.execute("SELECT COUNT(*) AS c FROM responses").fetchone()["c"]
+
+    doc = Document()
+    style_document_base(doc)
+
+    title = doc.add_heading(level=0)
+    trun = title.add_run("استبيان: أثر المحاسبة الدولية على الأسواق المالية — الإحصائيات")
+    set_rtl(title)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    summary = doc.add_paragraph()
+    summary_run = summary.add_run(
+        f"عدد الإجابات: {total}   |   تاريخ التصدير: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+    )
+    set_rtl(summary)
+    summary.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph()
+
+    for stat in stats:
+        img_buf = generate_stat_chart_image(stat)
+        doc.add_picture(img_buf, width=Cm(16))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph()
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    filename = f"statistiques_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.docx"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 @app.route("/admin/stats")
